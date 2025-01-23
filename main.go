@@ -37,7 +37,7 @@ func main() {
 	rmCmd := flag.NewFlagSet("rm", flag.ExitOnError)
 
 	if len(os.Args) < 2 {
-		fmt.Println("Expected 'ls' or 'edit' subcommands")
+		fmt.Println("Please give a subcommand: ls, edit, push, or rm")
 		os.Exit(1)
 	}
 
@@ -313,6 +313,12 @@ func createCred(tppURL, token, credPath string, c Credential) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		// Dump body.
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("create failed: %s, body: %v", resp.Status, string(body))
+	}
+
 	var res struct {
 		Result Result `json:"Result"`
 	}
@@ -326,7 +332,7 @@ func createCred(tppURL, token, credPath string, c Credential) error {
 	case ResultSuccess:
 		// continue
 	default:
-		return fmt.Errorf("error creating %q: %v", credPath, ResultString(res.Result))
+		return fmt.Errorf("error creating '%s': %v", credPath, ResultString(res.Result))
 	}
 	return nil
 }
@@ -455,16 +461,16 @@ func listObjects(tppURL, token string) ([]string, error) {
 	}
 	defer resp.Body.Close()
 
-	var creds ObjectsResp
-	err = json.NewDecoder(resp.Body).Decode(&creds)
-	if err != nil {
-		return nil, fmt.Errorf("while decoding response from /vedsdk/Config/Enumerate: %w", err)
-	}
-
 	if resp.StatusCode != http.StatusOK {
 		// Dump body.
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("list failed: %s: %s", resp.Status, string(body))
+	}
+
+	var creds ObjectsResp
+	err = json.NewDecoder(resp.Body).Decode(&creds)
+	if err != nil {
+		return nil, fmt.Errorf("while decoding response from /vedsdk/Config/Enumerate: %w", err)
 	}
 
 	var credPaths []string
