@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -30,8 +31,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	listCmd := flag.NewFlagSet("ls", flag.ExitOnError)
+	lsCmd := flag.NewFlagSet("ls", flag.ExitOnError)
 	editCmd := flag.NewFlagSet("edit", flag.ExitOnError)
+	pushCmd := flag.NewFlagSet("push", flag.ExitOnError)
+	rmCmd := flag.NewFlagSet("rm", flag.ExitOnError)
 
 	if len(os.Args) < 2 {
 		fmt.Println("Expected 'ls' or 'edit' subcommands")
@@ -39,8 +42,9 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	// Usage: tppctl ls
 	case "ls":
-		listCmd.Parse(os.Args[2:])
+		lsCmd.Parse(os.Args[2:])
 		objs, err := listObjects(tppURL, token)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -49,6 +53,8 @@ func main() {
 		for _, obj := range objs {
 			fmt.Println(obj)
 		}
+
+	// Usage: tppctl edit '\VED\Policy\firefly\config.yaml'
 	case "edit":
 		editCmd.Parse(os.Args[2:])
 		if editCmd.NArg() < 1 {
@@ -59,80 +65,81 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+	// Usage: tppctl push '\VED\Policy\firefly\config.yaml' <config.yaml
+	case "push":
+		pushCmd.Parse(os.Args[2:])
+		if pushCmd.NArg() < 1 {
+			fmt.Println("Expected configuration name")
+			os.Exit(1)
+		}
+		credPath := pushCmd.Arg(0)
+
+		// Get the contents from stdin.
+		yamlBlob, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		credResp, err := getCred(tppURL, token, credPath)
+		switch {
+		case isNotFoundCred(err):
+			// Credential does not exist: let's create the credential.
+			err := createCred(tppURL, token, credPath, Credential{
+				FriendlyName: "Generic",
+				Values: []Values{
+					{
+						Name:  "Generic",
+						Type:  "byte[]",
+						Value: base64.StdEncoding.EncodeToString(yamlBlob),
+					},
+					{
+						Name:  "Password",
+						Type:  "string",
+						Value: "foo",
+					},
+				},
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+		case err != nil:
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		default:
+			// Credential already exists: let's update the credential.
+			err = updateCred(tppURL, token, credPath, *credResp)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+		}
+	case "rm":
+		rmCmd.Parse(os.Args[2:])
+		if rmCmd.NArg() < 1 {
+			fmt.Println("Expected configuration name")
+			os.Exit(1)
+		}
+		credPath := rmCmd.Arg(0)
+		fmt.Printf("Deleting %q\n", credPath)
+
+		err := RmCred(tppURL, token, credPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
 		os.Exit(1)
 	}
 }
 
-type Credential struct {
-	Classname    string    `json:"Classname"`
-	Contact      []Contact `json:"Contact"`
-	FriendlyName string    `json:"FriendlyName"`
-	Result       Result    `json:"Result"`
-	Values       []Values  `json:"Values"`
-}
-type Contact struct {
-	Prefix            string `json:"Prefix"`
-	PrefixedName      string `json:"PrefixedName"`
-	PrefixedUniversal string `json:"PrefixedUniversal"`
-	State             int    `json:"State"`
-	Universal         string `json:"Universal"`
-}
-type Values struct {
-	Name  string `json:"Name"`
-	Type  string `json:"Type"`
-	Value string `json:"Value"`
-}
-
-func getCred(apiURL, token, credPath string) (*Credential, error) {
-	body, err := json.Marshal(struct {
-		CredentialPath string `json:"CredentialPath"`
-	}{CredentialPath: credPath})
-	if err != nil {
-		return nil, fmt.Errorf("while marshalling request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/vedsdk/credentials/retrieve", apiURL), bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("while creating request for /vedsdk/credentials/retrieve: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", userAgent)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("while making request to /vedsdk/credentials/retrieve: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		// Dump body.
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("retrieve failed: %s, body: %v", resp.Status, string(body))
-	}
-
-	var cred Credential
-	if err := json.NewDecoder(resp.Body).Decode(&cred); err != nil {
-		return nil, fmt.Errorf("while decoding response from /vedsdk/credentials/retrieve: %w", err)
-	}
-
-	return &cred, nil
-}
-
 func editConfigInCred(tppURL, token, credPath string) error {
 	credResp, err := getCred(tppURL, token, credPath)
 	if err != nil {
-		return err
-	}
-	switch Result(credResp.Result) {
-	case ResultSuccess:
-		// continue
-	case ResultAttributeNotFound:
-		return fmt.Errorf("attribute not found: '%s'", credPath)
-	default:
-		return fmt.Errorf("error fetching '%s': %v", credPath, ResultString(credResp.Result))
+		return fmt.Errorf("while fetching %s: %w", credPath, err)
 	}
 
 	// Get the Values[0].Value, and base64-decode it. This is the YAML blob that
@@ -184,10 +191,149 @@ func editConfigInCred(tppURL, token, credPath string) error {
 	return nil
 }
 
+type Credential struct {
+	Contact      []Contact `json:"Contact"`
+	FriendlyName string    `json:"FriendlyName"`
+	Values       []Values  `json:"Values"`
+}
+type Contact struct {
+	Prefix            string `json:"Prefix"`
+	PrefixedName      string `json:"PrefixedName"`
+	PrefixedUniversal string `json:"PrefixedUniversal"`
+	State             int    `json:"State"`
+	Universal         string `json:"Universal"`
+}
+type Values struct {
+	Name  string `json:"Name"`
+	Type  string `json:"Type"`
+	Value string `json:"Value"`
+}
+
+// Works with getCred and updateCred.
+func isNotFoundCred(err error) bool {
+	if err == nil {
+		return false
+	}
+	c := CredError{}
+	if !errors.As(err, &c) {
+		return false
+	}
+	return c.Res() == ResultObjectDoesNotExist
+}
+
+// POST /vedsdk/Credentials/retrieve
+func getCred(apiURL, token, credPath string) (*Credential, error) {
+	body, err := json.Marshal(struct {
+		CredentialPath string `json:"CredentialPath"`
+	}{CredentialPath: credPath})
+	if err != nil {
+		return nil, fmt.Errorf("while marshalling request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/vedsdk/credentials/retrieve", apiURL), bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("while creating request for /vedsdk/credentials/retrieve: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("while making request to /vedsdk/credentials/retrieve: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Dump body.
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("retrieve failed: %s, body: %v", resp.Status, string(body))
+	}
+
+	var cred struct {
+		Credential `json:",inline"`
+		Result     Result `json:"Result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&cred); err != nil {
+		return nil, fmt.Errorf("while decoding response from /vedsdk/credentials/retrieve: %w", err)
+	}
+
+	switch cred.Result {
+	case ResultSuccess:
+		// continue
+	default:
+		return nil, CredError{Result: cred.Result, CredPath: credPath}
+	}
+	return &cred.Credential, nil
+}
+
+type CredError struct {
+	Result   Result
+	CredPath string
+}
+
+func (e CredError) Error() string {
+	return ResultString(e.Result)
+}
+
+func (e CredError) Res() Result {
+	return e.Result
+}
+
+// E.g., '\VED\Policy\firefly\config.yaml'
+func (e CredError) Path() string {
+	return e.CredPath
+}
+
+// POST /vedsdk/Credentials/create
+func createCred(tppURL, token, credPath string, c Credential) error {
+	body, err := json.Marshal(struct {
+		Credential     `json:",inline"`
+		CredentialPath string `json:"CredentialPath"`
+	}{
+		Credential:     c,
+		CredentialPath: credPath,
+	})
+	if err != nil {
+		return fmt.Errorf("while marshalling request for POST /vedsdk/credentials/create: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/vedsdk/credentials/create", tppURL), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("while creating request for POST /vedsdk/credentials/create: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("while making request to POST /vedsdk/credentials/create: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var res struct {
+		Result Result `json:"Result"`
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return fmt.Errorf("while decoding response from POST /vedsdk/credentials/create: %w", err)
+	}
+
+	switch res.Result {
+	case ResultSuccess:
+		// continue
+	default:
+		return fmt.Errorf("error creating %q: %v", credPath, ResultString(res.Result))
+	}
+	return nil
+}
+
 // POST /vedsdk/Credentials/update
 func updateCred(tppURL, token, credPath string, c Credential) error {
 	body, err := json.Marshal(struct {
-		//inline
 		Credential     `json:",inline"`
 		CredentialPath string `json:"CredentialPath"`
 	}{
@@ -234,6 +380,50 @@ func updateCred(tppURL, token, credPath string, c Credential) error {
 	default:
 		return fmt.Errorf("error updating %q: %v", credPath, ResultString(res.Result))
 	}
+	return nil
+}
+
+func RmCred(tppURL, token, credPath string) error {
+	body, err := json.Marshal(struct {
+		CredentialPath string `json:"CredentialPath"`
+	}{CredentialPath: credPath})
+	if err != nil {
+		return fmt.Errorf("while marshalling request for /vedsdk/Credentials/delete: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/vedsdk/Credentials/delete", tppURL), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("while creating request for /vedsdk/Credentials/delete: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("while making request to /vedsdk/Credentials/delete: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Dump body.
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete failed: %s, body: %v", resp.Status, string(body))
+	}
+
+	var res struct {
+		Result Result `json:"Result"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return fmt.Errorf("while decoding response from /vedsdk/Credentials/delete: %w", err)
+	}
+
+	if res.Result != ResultSuccess {
+		return CredError{Result: res.Result, CredPath: credPath}
+	}
+
 	return nil
 }
 

@@ -224,3 +224,4 @@ func ResultCode(result Result) string {
 	}
 	return "Unknown error code"
 }
+
