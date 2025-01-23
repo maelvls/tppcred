@@ -16,6 +16,7 @@ import (
 
 const (
 	userAgent = "tppctl/v0.0.1"
+	usage     = `Usage: tppctl (ls|edit|push|rm|read) [args]`
 )
 
 func main() {
@@ -31,11 +32,30 @@ func main() {
 		os.Exit(1)
 	}
 
+	flag.CommandLine.Usage = func() {
+		fmt.Println(usage)
+	}
+
 	lsCmd := flag.NewFlagSet("ls", flag.ExitOnError)
+	lsCmd.Usage = func() {
+		fmt.Println("Usage: tppctl ls")
+	}
 	editCmd := flag.NewFlagSet("edit", flag.ExitOnError)
+	editCmd.Usage = func() {
+		fmt.Println(`Usage: tppctl edit '\VED\Policy\firefly\config.yaml'`)
+	}
 	pushCmd := flag.NewFlagSet("push", flag.ExitOnError)
+	pushCmd.Usage = func() {
+		fmt.Println(`Usage: tppctl push '\VED\Policy\firefly\config.yaml' <config.yaml`)
+	}
 	rmCmd := flag.NewFlagSet("rm", flag.ExitOnError)
+	rmCmd.Usage = func() {
+		fmt.Println(`Usage: tppctl rm '\VED\Policy\firefly\config.yaml'`)
+	}
 	read := flag.NewFlagSet("read", flag.ExitOnError)
+	read.Usage = func() {
+		fmt.Println(`Usage: tppctl read '\VED\Policy\firefly\config.yaml'`)
+	}
 
 	if len(os.Args) < 2 {
 		fmt.Println("Please give a subcommand: ls, edit, push, rm, read")
@@ -43,6 +63,8 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "-h", "--help":
+		flag.CommandLine.Usage()
 	// Usage: tppctl ls
 	case "ls":
 		lsCmd.Parse(os.Args[2:])
