@@ -35,9 +35,10 @@ func main() {
 	editCmd := flag.NewFlagSet("edit", flag.ExitOnError)
 	pushCmd := flag.NewFlagSet("push", flag.ExitOnError)
 	rmCmd := flag.NewFlagSet("rm", flag.ExitOnError)
+	read := flag.NewFlagSet("read", flag.ExitOnError)
 
 	if len(os.Args) < 2 {
-		fmt.Println("Please give a subcommand: ls, edit, push, or rm")
+		fmt.Println("Please give a subcommand: ls, edit, push, rm, read")
 		os.Exit(1)
 	}
 
@@ -58,7 +59,7 @@ func main() {
 	case "edit":
 		editCmd.Parse(os.Args[2:])
 		if editCmd.NArg() < 1 {
-			fmt.Println("Expected configuration name")
+			fmt.Println(`Expected credential path, e.g., \VED\Policy\Firefly\config.yaml`)
 			os.Exit(1)
 		}
 		if err := editConfigInCred(tppURL, token, editCmd.Arg(0)); err != nil {
@@ -69,7 +70,7 @@ func main() {
 	case "push":
 		pushCmd.Parse(os.Args[2:])
 		if pushCmd.NArg() < 1 {
-			fmt.Println("Expected configuration name")
+			fmt.Println(`Expected credential path, e.g., \VED\Policy\Firefly\config.yaml`)
 			os.Exit(1)
 		}
 		credPath := pushCmd.Arg(0)
@@ -81,13 +82,20 @@ func main() {
 			os.Exit(1)
 		}
 
+		// When the value's type is 'byte[]', TPP will not accept an empty
+		// value. So, let's check that the YAML blob is not empty.
+		if len(yamlBlob) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: the YAML blob is empty, TPP cannot store an empty value in a Generic Credential\n")
+			os.Exit(1)
+		}
+
 		credResp, err := getCred(tppURL, token, credPath)
 		switch {
 		case isNotFoundCred(err):
 			// Credential does not exist: let's create the credential.
 			err := createCred(tppURL, token, credPath, Credential{
 				FriendlyName: "Generic",
-				Values: []Values{
+				Values: []Value{
 					{
 						Name:  "Generic",
 						Type:  "byte[]",
@@ -118,7 +126,7 @@ func main() {
 	case "rm":
 		rmCmd.Parse(os.Args[2:])
 		if rmCmd.NArg() < 1 {
-			fmt.Println("Expected configuration name")
+			fmt.Println(`Expected credential path, e.g., \VED\Policy\Firefly\config.yaml`)
 			os.Exit(1)
 		}
 		credPath := rmCmd.Arg(0)
@@ -130,6 +138,33 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "read":
+		read.Parse(os.Args[2:])
+		if read.NArg() < 1 {
+			fmt.Println(`Expected credential path, e.g., \VED\Policy\Firefly\config.yaml`)
+			os.Exit(1)
+		}
+		credPath := read.Arg(0)
+
+		credResp, err := getCred(tppURL, token, credPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Get the Values[0].Value, and base64-decode it.
+		if len(credResp.Values) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: no values found in %q\n", credPath)
+			os.Exit(1)
+		}
+
+		yamlBlob, err := base64.StdEncoding.DecodeString(credResp.Values[0].Value)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: while decoding the value 'Values[0].Value' within the Generic Credential '%s': %v\n", credPath, err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("%s", yamlBlob)
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
 		os.Exit(1)
@@ -194,7 +229,7 @@ func editConfigInCred(tppURL, token, credPath string) error {
 type Credential struct {
 	Contact      []Contact `json:"Contact"`
 	FriendlyName string    `json:"FriendlyName"`
-	Values       []Values  `json:"Values"`
+	Values       []Value   `json:"Values"`
 }
 type Contact struct {
 	Prefix            string `json:"Prefix"`
@@ -203,10 +238,15 @@ type Contact struct {
 	State             int    `json:"State"`
 	Universal         string `json:"Universal"`
 }
-type Values struct {
+
+// Note: The Value field cannot be empty regardless of the Type. Otherwise, the
+// creation or update of the cred will fail with:
+//
+//	400 Bad Request, body: {"error":"invalid_request","error_description":"The request is missing a required parameter or is otherwise malformed"}
+type Value struct {
 	Name  string `json:"Name"`
 	Type  string `json:"Type"`
-	Value string `json:"Value"`
+	Value string `json:"Value"` // Cannot be empty regardless of the Type.
 }
 
 // Works with getCred and updateCred.
@@ -230,9 +270,9 @@ func getCred(apiURL, token, credPath string) (*Credential, error) {
 		return nil, fmt.Errorf("while marshalling request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/vedsdk/credentials/retrieve", apiURL), bytes.NewReader(body))
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/vedsdk/Credentials/retrieve", apiURL), bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("while creating request for /vedsdk/credentials/retrieve: %w", err)
+		return nil, fmt.Errorf("while creating request for /vedsdk/Credentials/retrieve: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -240,7 +280,7 @@ func getCred(apiURL, token, credPath string) (*Credential, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("while making request to /vedsdk/credentials/retrieve: %w", err)
+		return nil, fmt.Errorf("while making request to /vedsdk/Credentials/retrieve: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -255,7 +295,7 @@ func getCred(apiURL, token, credPath string) (*Credential, error) {
 		Result     Result `json:"Result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&cred); err != nil {
-		return nil, fmt.Errorf("while decoding response from /vedsdk/credentials/retrieve: %w", err)
+		return nil, fmt.Errorf("while decoding response from /vedsdk/Credentials/retrieve: %w", err)
 	}
 
 	switch cred.Result {
