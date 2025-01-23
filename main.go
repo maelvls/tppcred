@@ -106,6 +106,12 @@ func getCred(apiURL, token, credPath string) (*Credential, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		// Dump body.
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("retrieve failed: %s, body: %v", resp.Status, string(body))
+	}
+
 	var cred Credential
 	if err := json.NewDecoder(resp.Body).Decode(&cred); err != nil {
 		return nil, fmt.Errorf("while decoding response from /vedsdk/credentials/retrieve: %w", err)
@@ -225,7 +231,7 @@ func updateCred(tppURL, token, credPath string, c Credential) error {
 	case ResultAttributeNotFound:
 		return fmt.Errorf("attribute not found: %q", credPath)
 	default:
-		return fmt.Errorf("error fetching %q: %v", credPath, ResultString(res.Result))
+		return fmt.Errorf("error updating %q: %v", credPath, ResultString(res.Result))
 	}
 	return nil
 }
