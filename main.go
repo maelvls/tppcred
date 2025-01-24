@@ -75,7 +75,7 @@ func main() {
 		if err == nil {
 			var abort bool
 			huh.NewConfirm().
-				Title("Your username and password are already working. Do you want to abort?").
+				Title("Your username and password are already working. Do you still want to re-authenticate?").
 				Value(&abort).
 				Run()
 			if abort {

@@ -10,18 +10,20 @@ go install github.com/maelvls/tppctl@latest
 
 ## Usage
 
-Before using `tppctl`, you need to set the `TPP_URL` and `TOKEN` environment
-variables. To get a token, you can use the `vcert` utility:
+First, authenticate with the TPP server using the command:
 
 ```bash
-export TPP_URL=https://tpp-ext.tpp-tests.jetstack.net
-export TOKEN=$(vcert getcred \
-  -u $TPP_URL \
-  --username=$TPP_USER \
-  --password=$TPP_PWD \
-  --client-id=vcert-sdk \
-  --scope='credential:manage,delete' \
-  --format json | tee /dev/stderr | jq -r .access_token)
+tppctl auth
+```
+
+This will prompt you for the TPP URL, your username, password, and client ID:
+
+```console
+$ tppctl auth
+┃ Enter the TPP URL: https://tpp-ext.tpp-tests.jetstack.net
+  Enter your username: jetstack-platform
+  Enter your password: *******************
+  Enter the client ID: vcert-sdk
 ```
 
 Now, you can list the Generic Credentials with:

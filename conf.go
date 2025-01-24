@@ -46,6 +46,7 @@ func AuthCmdLoad(cliFlags *AuthCmdCLIFlags) (AuthCmdResultConf, error) {
 	result.URL = conf.URL
 	result.Username = conf.Username
 	result.Password = conf.Password
+	result.ClientID = conf.ClientID
 
 	// Then, load the environment. The env vars take precedence.
 	envURL := os.Getenv("TPP_URL")
@@ -60,6 +61,10 @@ func AuthCmdLoad(cliFlags *AuthCmdCLIFlags) (AuthCmdResultConf, error) {
 	if envPassword != "" {
 		result.Password = envPassword
 	}
+	envClientID := os.Getenv("CLIENT_ID")
+	if envClientID != "" {
+		result.ClientID = envClientID
+	}
 
 	// Finally, look at the CLI flags. These take precedence over the env vars.
 	if cliFlags.URL != "" {
@@ -70,6 +75,9 @@ func AuthCmdLoad(cliFlags *AuthCmdCLIFlags) (AuthCmdResultConf, error) {
 	}
 	if cliFlags.Password != "" {
 		result.Password = cliFlags.Password
+	}
+	if cliFlags.ClientID != "" {
+		result.ClientID = cliFlags.ClientID
 	}
 
 	return result, nil
