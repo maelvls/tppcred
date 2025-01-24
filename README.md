@@ -20,10 +20,17 @@ This will prompt you for the TPP URL, your username, password, and client ID:
 
 ```console
 $ tppctl auth
-┃ Enter the TPP URL: https://tpp-ext.tpp-tests.jetstack.net
-  Enter your username: jetstack-platform
-  Enter your password: *******************
-  Enter the client ID: vcert-sdk
+┃ Do not add the suffix '/vedsdk'.
+┃ URL: https://tpp-ext.tpp-tests.jetstack.net
+
+  The TPP user must be a super admin if you want to run 'tppctl ls'.
+  Username: jetstack-platform
+
+  The password will be stored in plain text in ~/.config/tppctl.yaml
+  Password: *******************
+
+  The API Integration associated to your client ID must accept the scope configuration:manage;security:manage,delete.
+  Client ID: vcert-sdk
 ```
 
 Now, you can list the Generic Credentials with:
