@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	userAgent = "tppctl/v0.0.1"
-	usage     = `Usage: tppctl (auth|ls|edit|push|show|rm) [args]`
+	userAgent     = "tppctl/v0.0.1"
+	usage         = `Usage: tppctl (auth|ls|edit|push|show|rm) [args]`
+	requiredScope = "configuration:manage;security:manage,delete"
 )
 
 func main() {
@@ -85,17 +86,21 @@ func main() {
 		}
 		fields = append(fields,
 			huh.NewInput().
-				Prompt("Enter the TPP URL: ").
+				Prompt("URL: ").
+				Description("Do not add the suffix '/vedsdk'.").
 				Value(&conf.URL),
 			huh.NewInput().
-				Prompt("Enter your username: ").
+				Prompt("Username: ").
+				Description("The TPP user must be a super admin if you want to run 'tppctl ls'.").
 				Value(&conf.Username),
 			huh.NewInput().
-				Prompt("Enter your password: ").
+				Prompt("Password: ").
 				EchoMode(huh.EchoModePassword).
+				Description("The password will be stored in plain text in ~/"+configPath).
 				Value(&conf.Password),
 			huh.NewInput().
-				Prompt("Enter the client ID: ").
+				Prompt("Client ID: ").
+				Description("The API Integration associated to your client ID must accept the scope "+requiredScope+".").
 				Value(&conf.ClientID),
 		)
 		f := huh.NewForm(huh.NewGroup(fields...))
@@ -676,7 +681,7 @@ func getToken(tppURL, username, password, clientID string) (string, error) {
 		ClientID: clientID,
 		Username: username,
 		Password: password,
-		Scope:    "configuration:manage;security:manage,delete",
+		Scope:    requiredScope,
 	})
 	if err != nil {
 		return "", fmt.Errorf("while marshalling request for POST /vedauth/authorize/oauth: %w", err)
