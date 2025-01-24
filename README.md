@@ -33,13 +33,10 @@ $ tppctl auth
   Client ID: vcert-sdk
 ```
 
-Now, you can list the Generic Credentials with:
+You can list the Generic Credentials with:
 
-```console
-$ tppctl ls
-\VED\Policy\firefly\config.yaml
-\VED\Policy\firefly\us-west-1\service-mesh\firefly
-\VED\Policy\firefly-e2e\config.yaml
+```bash
+tppctl ls
 ```
 
 You can edit a Generic Credential straight from your terminal with:
@@ -53,15 +50,13 @@ This will open your `$EDITOR` (e.g., Vim). Close the editor to save the changes.
 You can create or update a Generic Credential with:
 
 ```bash
-tppctl push '\VED\Policy\firefly\config.yaml' <<EOF
-the contents
-EOF
+tppctl push '\VED\Policy\firefly\config.yaml' < config.yaml
 ```
 
 You can output the Generic Credential's contents with:
 
 ```bash
-tppctl read '\VED\Policy\firefly\config.yaml'
+tppctl show '\VED\Policy\firefly\config.yaml'
 ```
 
 You can delete a Generic Credential with:
