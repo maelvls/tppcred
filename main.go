@@ -224,7 +224,7 @@ func editConfigInCred(tppURL, token, credPath string) error {
 	if editor == "" {
 		editor = "vim"
 	}
-	cmd := exec.Command(editor, tmpfile.Name())
+	cmd := exec.Command("sh", "-c", editor+" "+tmpfile.Name())
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
