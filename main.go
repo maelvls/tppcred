@@ -12,11 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/charmbracelet/huh"
 )
 
 const (
 	userAgent = "tppctl/v0.0.1"
-	usage     = `Usage: tppctl (auth|ls|edit|push|rm|read) [args]`
+	usage     = `Usage: tppctl (auth|ls|edit|push|show|rm) [args]`
 )
 
 func main() {
@@ -39,17 +41,17 @@ func main() {
 	pushCmd.Usage = func() {
 		fmt.Println(`Usage: tppctl push '\VED\Policy\firefly\config.yaml' <config.yaml`)
 	}
+	show := flag.NewFlagSet("show", flag.ExitOnError)
+	show.Usage = func() {
+		fmt.Println(`Usage: tppctl show '\VED\Policy\firefly\config.yaml'`)
+	}
 	rmCmd := flag.NewFlagSet("rm", flag.ExitOnError)
 	rmCmd.Usage = func() {
 		fmt.Println(`Usage: tppctl rm '\VED\Policy\firefly\config.yaml'`)
 	}
-	read := flag.NewFlagSet("read", flag.ExitOnError)
-	read.Usage = func() {
-		fmt.Println(`Usage: tppctl read '\VED\Policy\firefly\config.yaml'`)
-	}
 
 	if len(os.Args) < 2 {
-		fmt.Println("Please give a subcommand: ls, edit, push, rm, read")
+		fmt.Println("Please give a subcommand: ls, edit, push, rm, show")
 		os.Exit(1)
 	}
 
@@ -58,23 +60,85 @@ func main() {
 		flag.CommandLine.Usage()
 	case "auth":
 		flags := AuthCmdSetup(authCmd)
+
 		authCmd.Parse(os.Args[2:])
+
 		conf, err := AuthCmdLoad(flags)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
 			os.Exit(1)
 		}
 
-		ti.Placeholder = "Password"
-		ti.Prompt = "Enter your password: "
-		ti
+		// Let's let the user know if the username and password already work,
+		// and offer to abort.
+		_, err = getToken(conf.URL, conf.Username, conf.Password, conf.ClientID)
+		if err == nil {
+			var abort bool
+			huh.NewConfirm().
+				Title("Your username and password are already working. Do you want to abort?").
+				Value(&abort).
+				Run()
+			if abort {
+				os.Exit(0)
+			}
+		}
 
-		ti.
-			authCmd.Parse(os.Args[2:])
+		if conf.ClientID == "" {
+			conf.ClientID = "vcert-sdk"
+		}
+
+		f := huh.NewForm(huh.NewGroup(
+			huh.NewInput().
+				Prompt("Enter the TPP URL: ").
+				Value(&conf.URL),
+			huh.NewInput().
+				Prompt("Enter your username: ").
+				Value(&conf.Username),
+			huh.NewInput().
+				Prompt("Enter your password: ").
+				EchoMode(huh.EchoModePassword).
+				Value(&conf.Password),
+			huh.NewInput().
+				Prompt("Enter the client ID: ").
+				Value(&conf.ClientID),
+		))
+		err = f.Run()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		err = SaveFileConf(conf.ToFileConf())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving configuration: %v\n", err)
+			os.Exit(1)
+		}
+
+		token, err := getToken(conf.URL, conf.Username, conf.Password, conf.ClientID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error while authenticating: %v\n", err)
+			os.Exit(1)
+		}
+		conf.Token = token
+
+		err = SaveFileConf(conf.ToFileConf())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving configuration: %v\n", err)
+			os.Exit(1)
+		}
+
+		authCmd.Parse(os.Args[2:])
 
 	// Usage: tppctl ls
 	case "ls":
 		lsCmd.Parse(os.Args[2:])
+
+		token, tppURL, err := GetTokenUsingFileConf()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		objs, err := listObjects(tppURL, token)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -91,6 +155,13 @@ func main() {
 			fmt.Println(`Expected credential path, e.g., \VED\Policy\Firefly\config.yaml`)
 			os.Exit(1)
 		}
+
+		token, tppURL, err := GetTokenUsingFileConf()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: while authenticating: %v\n", err)
+			os.Exit(1)
+		}
+
 		if err := editConfigInCred(tppURL, token, editCmd.Arg(0)); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -103,6 +174,12 @@ func main() {
 			os.Exit(1)
 		}
 		credPath := pushCmd.Arg(0)
+
+		token, tppURL, err := GetTokenUsingFileConf()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: while authenticating: %v\n", err)
+			os.Exit(1)
+		}
 
 		// Get the contents from stdin.
 		yamlBlob, err := io.ReadAll(os.Stdin)
@@ -152,30 +229,20 @@ func main() {
 				os.Exit(1)
 			}
 		}
-	case "rm":
-		LoadNormalConf()
 
-		rmCmd.Parse(os.Args[2:])
-		if rmCmd.NArg() < 1 {
+	case "show":
+		show.Parse(os.Args[2:])
+		if show.NArg() < 1 {
 			fmt.Println(`Expected credential path, e.g., \VED\Policy\Firefly\config.yaml`)
 			os.Exit(1)
 		}
-		credPath := rmCmd.Arg(0)
-		fmt.Printf("Deleting %q\n", credPath)
+		credPath := show.Arg(0)
 
-		err := RmCred(tppURL, token, credPath)
+		token, tppURL, err := GetTokenUsingFileConf()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: while authenticating: %v\n", err)
 			os.Exit(1)
 		}
-
-	case "read":
-		read.Parse(os.Args[2:])
-		if read.NArg() < 1 {
-			fmt.Println(`Expected credential path, e.g., \VED\Policy\Firefly\config.yaml`)
-			os.Exit(1)
-		}
-		credPath := read.Arg(0)
 
 		credResp, err := getCred(tppURL, token, credPath)
 		if err != nil {
@@ -196,6 +263,29 @@ func main() {
 		}
 
 		fmt.Printf("%s", yamlBlob)
+
+	case "rm":
+		rmCmd.Parse(os.Args[2:])
+		if rmCmd.NArg() < 1 {
+			fmt.Println(`Expected credential path, e.g., \VED\Policy\Firefly\config.yaml`)
+			os.Exit(1)
+		}
+		credPath := rmCmd.Arg(0)
+
+		token, tppURL, err := GetTokenUsingFileConf()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: while authenticating: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Deleting %q\n", credPath)
+
+		err = RmCred(tppURL, token, credPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
 		os.Exit(1)
@@ -578,3 +668,75 @@ const (
 	TypeNameGenericCred          TypeName = "Generic Credential"
 	TypeNameUsernamePasswordCred TypeName = "Username Password Credential"
 )
+
+func getToken(tppURL, username, password, clientID string) (string, error) {
+	body, err := json.Marshal(struct {
+		ClientID string `json:"client_id"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Scope    string `json:"scope"`
+	}{
+		ClientID: clientID,
+		Username: username,
+		Password: password,
+		Scope:    "configuration:manage;security:manage,delete",
+	})
+	if err != nil {
+		return "", fmt.Errorf("while marshalling request for POST /vedauth/authorize/oauth: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/vedauth/authorize/oauth", tppURL), bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("while creating request for POST /vedauth/authorize/oauth: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("while making request to POST /vedauth/authorize/oauth: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Dump body.
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("auth failed: %s, body: %v", resp.Status, string(body))
+	}
+
+	var authResp struct {
+		AccessToken string `json:"access_token"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&authResp)
+	if err != nil {
+		return "", fmt.Errorf("while decoding response from POST /vedauth/authorize/oauth: %w", err)
+	}
+
+	return authResp.AccessToken, nil
+}
+
+func checkToken(tppURL, token string) error {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/vedsdk/Identity/Self", tppURL), nil)
+	if err != nil {
+		return fmt.Errorf("while creating request for GET /vedsdk/Identity/Self: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("while making request to GET /vedsdk/Identity/Self: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Dump body.
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("check token failed: %s, body: %v", resp.Status, string(body))
+	}
+
+	return nil
+}

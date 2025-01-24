@@ -13,6 +13,7 @@ type AuthCmdCLIFlags struct {
 	Token    string
 	Username string // Used by the `auth` command to renew the token.
 	Password string // Used by the `auth` command to renew the token.
+	ClientID string // Used by the `auth` command to renew the token.
 }
 
 type AuthCmdResultConf struct {
@@ -20,6 +21,7 @@ type AuthCmdResultConf struct {
 	Token    string
 	Username string
 	Password string
+	ClientID string
 }
 
 func AuthCmdSetup(f *flag.FlagSet) *AuthCmdCLIFlags {
@@ -27,6 +29,7 @@ func AuthCmdSetup(f *flag.FlagSet) *AuthCmdCLIFlags {
 	f.StringVar(&c.URL, "url", "", "The TPP URL")
 	f.StringVar(&c.Username, "username", "", "The TPP username")
 	f.StringVar(&c.Password, "password", "", "The TPP password")
+	f.StringVar(&c.ClientID, "client-id", "", "The TPP client ID (also called the API Integration)")
 	return &c
 }
 
@@ -72,6 +75,16 @@ func AuthCmdLoad(cliFlags *AuthCmdCLIFlags) (AuthCmdResultConf, error) {
 	return result, nil
 }
 
+func (c AuthCmdResultConf) ToFileConf() FileConf {
+	return FileConf{
+		URL:      c.URL,
+		Username: c.Username,
+		Password: c.Password,
+		ClientID: c.ClientID,
+		Token:    c.Token,
+	}
+}
+
 // This CLI stores its authentication information in ~/.config/tppctl.yaml.
 const configPath = ".config/tppctl.yaml"
 
@@ -79,6 +92,7 @@ type FileConf struct {
 	URL      string `json:"url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+	ClientID string `json:"client_id"`
 	Token    string `json:"token"`
 }
 
@@ -90,6 +104,9 @@ func LoadFileConf() (FileConf, error) {
 
 	configPath := home + "/.config/tppctl.yaml"
 	f, err := os.Open(configPath)
+	if os.IsNotExist(err) {
+		return FileConf{}, nil
+	}
 	if err != nil {
 		return FileConf{}, fmt.Errorf("while opening ~/%s: %w", configPath, err)
 	}
@@ -120,4 +137,36 @@ func SaveFileConf(conf FileConf) error {
 	}
 
 	return nil
+}
+
+// Also requests a new token if the token is empty.
+func GetTokenUsingFileConf() (url, token string, _ error) {
+	conf, err := LoadFileConf()
+	if err != nil {
+		return "", "", fmt.Errorf("loading configuration: %w", err)
+	}
+
+	if conf.URL == "" || conf.Username == "" || conf.Password == "" || conf.ClientID == "" {
+		return "", "", fmt.Errorf("not authenticated. Please run `tppctl auth`.")
+	}
+
+	// Let's check if the token is valid.
+	err = checkToken(conf.URL, conf.Token)
+	if err == nil {
+		return conf.Token, conf.URL, nil
+	}
+
+	// If the token is invalid, let's request a new one and save it.
+	token, err = getToken(conf.URL, conf.Username, conf.Password, conf.ClientID)
+	if err != nil {
+		return "", "", fmt.Errorf("getting token: %w", err)
+	}
+	conf.Token = token
+
+	err = SaveFileConf(conf)
+	if err != nil {
+		return "", "", fmt.Errorf("saving token: %w", err)
+	}
+
+	return conf.Token, conf.URL, nil
 }
