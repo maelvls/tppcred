@@ -69,25 +69,21 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Let's let the user know if the username and password already work,
-		// and offer to abort.
-		_, err = getToken(conf.URL, conf.Username, conf.Password, conf.ClientID)
-		if err == nil {
-			var abort bool
-			huh.NewConfirm().
-				Title("Your username and password are already working. Do you still want to re-authenticate?").
-				Value(&abort).
-				Run()
-			if abort {
-				os.Exit(0)
-			}
-		}
-
 		if conf.ClientID == "" {
 			conf.ClientID = "vcert-sdk"
 		}
 
-		f := huh.NewForm(huh.NewGroup(
+		var fields []huh.Field
+
+		// Let's let the user know if the username and password already work,
+		// and offer to abort.
+		_, err = getToken(conf.URL, conf.Username, conf.Password, conf.ClientID)
+		if err == nil {
+			fields = append(fields, huh.NewNote().
+				Title("🎉 Your credentials are already working. You can still update them if you want."),
+			)
+		}
+		fields = append(fields,
 			huh.NewInput().
 				Prompt("Enter the TPP URL: ").
 				Value(&conf.URL),
@@ -101,7 +97,8 @@ func main() {
 			huh.NewInput().
 				Prompt("Enter the client ID: ").
 				Value(&conf.ClientID),
-		))
+		)
+		f := huh.NewForm(huh.NewGroup(fields...))
 		err = f.Run()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
