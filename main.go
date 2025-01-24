@@ -16,26 +16,17 @@ import (
 
 const (
 	userAgent = "tppctl/v0.0.1"
-	usage     = `Usage: tppctl (ls|edit|push|rm|read) [args]`
+	usage     = `Usage: tppctl (auth|ls|edit|push|rm|read) [args]`
 )
 
 func main() {
-	tppURL := os.Getenv("TPP_URL")
-	if tppURL == "" {
-		fmt.Println("TPP_URL needs to be set in the environment")
-		os.Exit(1)
-	}
-
-	token := os.Getenv("TOKEN")
-	if token == "" {
-		fmt.Println("TOKEN needs to be set in the environment")
-		os.Exit(1)
-	}
-
 	flag.CommandLine.Usage = func() {
 		fmt.Println(usage)
 	}
-
+	authCmd := flag.NewFlagSet("auth", flag.ExitOnError)
+	authCmd.Usage = func() {
+		fmt.Println("Usage: tppctl auth [--url <url>] [--username <username>] [--password <password>]")
+	}
 	lsCmd := flag.NewFlagSet("ls", flag.ExitOnError)
 	lsCmd.Usage = func() {
 		fmt.Println("Usage: tppctl ls")
@@ -65,6 +56,22 @@ func main() {
 	switch os.Args[1] {
 	case "-h", "--help":
 		flag.CommandLine.Usage()
+	case "auth":
+		flags := AuthCmdSetup(authCmd)
+		authCmd.Parse(os.Args[2:])
+		conf, err := AuthCmdLoad(flags)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
+			os.Exit(1)
+		}
+
+		ti.Placeholder = "Password"
+		ti.Prompt = "Enter your password: "
+		ti
+
+		ti.
+			authCmd.Parse(os.Args[2:])
+
 	// Usage: tppctl ls
 	case "ls":
 		lsCmd.Parse(os.Args[2:])
@@ -146,6 +153,8 @@ func main() {
 			}
 		}
 	case "rm":
+		LoadNormalConf()
+
 		rmCmd.Parse(os.Args[2:])
 		if rmCmd.NArg() < 1 {
 			fmt.Println(`Expected credential path, e.g., \VED\Policy\Firefly\config.yaml`)
