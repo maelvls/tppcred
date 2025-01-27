@@ -1,11 +1,10 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v3"
+	"github.com/spf13/pflag"
 )
 
 type AuthCmdCLIFlags struct {
@@ -24,13 +23,11 @@ type AuthCmdResultConf struct {
 	ClientID string
 }
 
-func AuthCmdSetup(f *flag.FlagSet) *AuthCmdCLIFlags {
-	var c AuthCmdCLIFlags
-	f.StringVar(&c.URL, "url", "", "The TPP URL")
-	f.StringVar(&c.Username, "username", "", "The TPP username")
-	f.StringVar(&c.Password, "password", "", "The TPP password")
-	f.StringVar(&c.ClientID, "client-id", "", "The TPP client ID (also called the API Integration)")
-	return &c
+func authCmdSetupFlags(f *pflag.FlagSet, fl *AuthCmdCLIFlags) {
+	f.StringVar(&fl.URL, "url", "", "The TPP URL")
+	f.StringVar(&fl.Username, "username", "", "The TPP username")
+	f.StringVar(&fl.Password, "password", "", "The TPP password")
+	f.StringVar(&fl.ClientID, "client-id", "", "The TPP client ID (also called the API Integration)")
 }
 
 // Env vars take precedence over the configuration file ~/.config/tppctl.yaml.
@@ -91,60 +88,6 @@ func (c AuthCmdResultConf) ToFileConf() FileConf {
 		ClientID: c.ClientID,
 		Token:    c.Token,
 	}
-}
-
-// This CLI stores its authentication information in ~/.config/tppctl.yaml.
-const configPath = ".config/tppctl.yaml"
-
-type FileConf struct {
-	URL      string `json:"url"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	ClientID string `json:"client_id"`
-	Token    string `json:"token"`
-}
-
-func LoadFileConf() (FileConf, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return FileConf{}, fmt.Errorf("while getting user's home directory: %w", err)
-	}
-
-	configPath := home + "/.config/tppctl.yaml"
-	f, err := os.Open(configPath)
-	if os.IsNotExist(err) {
-		return FileConf{}, nil
-	}
-	if err != nil {
-		return FileConf{}, fmt.Errorf("while opening ~/%s: %w", configPath, err)
-	}
-
-	var conf FileConf
-	if err := yaml.NewDecoder(f).Decode(&conf); err != nil {
-		return FileConf{}, fmt.Errorf("while decoding ~/%s: %w", configPath, err)
-	}
-
-	return conf, nil
-}
-
-func SaveFileConf(conf FileConf) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("while getting user's home directory: %w", err)
-	}
-
-	configPath := home + "/.config/tppctl.yaml"
-	f, err := os.Create(configPath)
-	if err != nil {
-		return fmt.Errorf("while creating ~/%s: %w", configPath, err)
-	}
-	defer f.Close()
-
-	if err := yaml.NewEncoder(f).Encode(conf); err != nil {
-		return fmt.Errorf("while encoding ~/%s: %w", configPath, err)
-	}
-
-	return nil
 }
 
 // Also requests a new token if the token is empty.
