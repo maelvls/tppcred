@@ -1,4 +1,4 @@
-module github.com/maelvls/tppctl
+module github.com/maelvls/tppcred
 
 go 1.23.5
 

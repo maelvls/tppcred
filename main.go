@@ -9,13 +9,13 @@ import (
 	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/maelvls/tppctl/undent"
+	"github.com/maelvls/tppcred/undent"
 	"github.com/spf13/cobra"
 )
 
 const (
-	userAgent       = "tppctl/v0.0.1"
-	usage           = `Usage: tppctl (auth|ls|edit|push|show|rm) [args]`
+	userAgent       = "tppcred/v0.0.1"
+	usage           = `Usage: tppcred (auth|ls|edit|push|show|rm) [args]`
 	requiredScope   = "configuration:manage;security:manage,delete"
 	expirationYears = 20 // 20 years.
 )
@@ -27,7 +27,7 @@ func authCmd() *cobra.Command {
 		Short: "Authenticate to TPP and save credentials.",
 		Long: undent.Undent(`
 			Authenticate to TPP and save credentials. The credentials are saved in
-			~/.config/tppctl.yaml.
+			~/.config/tppcred.yaml.
 
 			When run without arguments, the command will prompt you for the URL,
 			username, password, and client ID.
@@ -37,16 +37,16 @@ func authCmd() *cobra.Command {
 
 			The URL must not include the suffix '/vedsdk'.
 
-			The TPP user must be a super admin if you want to run 'tppctl ls'.
+			The TPP user must be a super admin if you want to run 'tppcred ls'.
 
 			Example:
-			  tppctl auth
-			  tppctl auth --url https://tpp.example.com --username admin --password admin --client-id my-client-id
+			  tppcred auth
+			  tppcred auth --url https://tpp.example.com --username admin --password admin --client-id my-client-id
 
 			Alternatively, you can provide the configuration using environment
 			variables. For example:
 			  export TPP_URL=https://tpp.example.com USERNAME=admin PASSWORD=admin CLIENT_ID=my-client-id
-			  tppctl auth
+			  tppcred auth
 		`),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -84,7 +84,7 @@ func runAuthCmd(cmdFlags *AuthCmdCLIFlags) func(cmd *cobra.Command, args []strin
 				Value(&conf.URL),
 			huh.NewInput().
 				Prompt("Username: ").
-				Description("The TPP user must be a super admin if you want to run 'tppctl ls'.").
+				Description("The TPP user must be a super admin if you want to run 'tppcred ls'.").
 				Value(&conf.Username),
 			huh.NewInput().
 				Prompt("Password: ").
@@ -194,7 +194,7 @@ func pushCmd() *cobra.Command {
 			TPP's built-in credential store.
 
 			Example:
-			  cat config.yaml | tppctl push '\VED\Policy\firefly\configs\config-prod'
+			  cat config.yaml | tppcred push '\VED\Policy\firefly\configs\config-prod'
 		`, expirationYears)),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -269,7 +269,7 @@ func showCmd() *cobra.Command {
 			built-in credential store.
 
 			Example:
-			  tppctl show '\VED\Policy\firefly\configs\config-prod'
+			  tppcred show '\VED\Policy\firefly\configs\config-prod'
 		`),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -315,7 +315,7 @@ func rmCmd() *cobra.Command {
 			built-in credential store.
 
 			Example:
-			  tppctl rm '\VED\Policy\firefly\configs\config-prod'
+			  tppcred rm '\VED\Policy\firefly\configs\config-prod'
 		`),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -344,13 +344,13 @@ func rmCmd() *cobra.Command {
 
 func main() {
 	var rootCmd = &cobra.Command{
-		Use:   "tppctl",
-		Short: "tppctl helps you handle Generic Credentials.",
+		Use:   "tppcred",
+		Short: "tppcred helps you handle Generic Credentials.",
 		Long: undent.Undent(`
-			tppctl helps you handle Generic Credentials in Venafi Trust Protection Platform (TPP).
+			tppcred helps you handle Generic Credentials in Venafi Trust Protection Platform (TPP).
 			To get started, run:
 
-			    tppctl auth
+			    tppcred auth
 		`),
 		SilenceUsage:  true,
 		SilenceErrors: true,
