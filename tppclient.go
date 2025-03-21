@@ -483,3 +483,309 @@ func checkToken(tppURL, token string) error {
 
 	return nil
 }
+
+// POST /OAuth/createJwtMapping
+func createJwtMapping(tppURL, token string, m JWTMapping) error {
+	body, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("while marshalling request for POST /vedsdk/oauth/CreateJwtMapping: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/vedsdk/oauth/CreateJwtMapping", tppURL), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("while creating request for POST /vedsdk/oauth/CreateJwtMapping: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("while making request to POST /vedsdk/oauth/CreateJwtMapping: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Dump body.
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("create JWT mapping failed: %s, body: %v", resp.Status, string(respBody))
+	}
+
+	var res struct {
+		JWTMapping JWTMapping `json:"JwtMapping"`
+		Result     int        `json:"Result"`
+		Success    bool       `json:"Success"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return fmt.Errorf("while decoding response from POST /vedsdk/oauth/CreateJwtMapping: %w", err)
+	}
+
+	if !res.Success {
+		return fmt.Errorf("error creating JWT mapping: %v", res.Result)
+	}
+
+	return nil
+}
+
+// POST /OAuth/listJWTMappings
+func listJWTMappings(tppURL, token string) ([]JWTMapping, error) {
+	body, err := json.Marshal(struct {
+		Start             int  `json:"Start"`
+		Count             int  `json:"Count"`
+		ResolveIdentities bool `json:"ResolveIdentities"`
+		OrderBy           int  `json:"OrderBy"`
+		Descending        bool `json:"Descending"`
+	}{
+		Start:             0,
+		Count:             1000,
+		ResolveIdentities: true,
+		OrderBy:           1,
+		Descending:        false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("while marshalling request for POST /vedsdk/oauth/EnumerateJwtMappings: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/vedsdk/oauth/EnumerateJwtMappings", tppURL), bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("while creating request for POST /vedsdk/oauth/EnumerateJwtMappings: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("while making request to POST /vedsdk/oauth/EnumerateJwtMappings: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Dump body.
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("while making request to POST /vedsdk/oauth/EnumerateJwtMappings: %s, body: %v", resp.Status, string(respBody))
+	}
+
+	var res struct {
+		Count       int          `json:"Count"`
+		JWTMappings []JWTMapping `json:"JwtMappings"`
+		Result      int          `json:"Result"`
+		Success     bool         `json:"Success"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return nil, fmt.Errorf("while decoding response from POST /vedsdk/oauth/EnumerateJwtMappings: %w", err)
+	}
+
+	if !res.Success {
+		return nil, fmt.Errorf("error enumerating JWT mappings: %v", res.Result)
+	}
+
+	return res.JWTMappings, nil
+}
+
+// POST OAuth/UpdateJwtMapping
+func updateJWTMapping(tppURL, token string, m JWTMapping) error {
+	body, err := json.Marshal(struct {
+		JWTMapping `json:"JwtMapping"`
+	}{
+		JWTMapping: m,
+	})
+	if err != nil {
+		return fmt.Errorf("while marshalling request for POST /vedsdk/oauth/UpdateJwtMapping: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/vedsdk/oauth/UpdateJwtMapping", tppURL), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("while creating request for POST /vedsdk/oauth/UpdateJwtMapping: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("while making request to POST /vedsdk/oauth/UpdateJwtMapping: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Dump body.
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("update JWT mapping failed: %s, body: %v", resp.Status, string(respBody))
+	}
+
+	var res struct {
+		Result  int  `json:"Result"`
+		Success bool `json:"Success"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return fmt.Errorf("while decoding response from POST /vedsdk/oauth/UpdateJwtMapping: %w", err)
+	}
+
+	if !res.Success {
+		return fmt.Errorf("error updating JWT mapping: %v", res.Result)
+	}
+
+	return nil
+}
+
+// POST OAuth/DeleteJwtMapping
+//
+//	{
+//	  "Name": "Example JWT mapping"
+//	}
+func deleteJwtMapping(tppURL, token, name string) error {
+	body, err := json.Marshal(struct {
+		Name string `json:"Name"`
+	}{Name: name})
+	if err != nil {
+		return fmt.Errorf("while marshalling request for POST /vedsdk/oauth/DeleteJwtMapping: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/vedsdk/oauth/DeleteJwtMapping", tppURL), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("while creating request for POST /vedsdk/oauth/DeleteJwtMapping: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("while making request to POST /vedsdk/oauth/DeleteJwtMapping: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Dump body.
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete JWT mapping failed: %s, body: %v", resp.Status, string(respBody))
+	}
+
+	var res struct {
+		Result  int  `json:"Result"`
+		Success bool `json:"Success"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return fmt.Errorf("while decoding response from POST /vedsdk/oauth/DeleteJwtMapping: %w", err)
+	}
+
+	if !res.Success {
+		return fmt.Errorf("error deleting JWT mapping: %v", res.Result)
+	}
+
+	return nil
+}
+
+type JWTMapping struct {
+	// GranteePrefixedUniversal is the universal of the identity to which the
+	// JWT mapping applies. Example:
+	// "local:{77a4cdda-12f2-4d83-aaff-8a3682d014cc}"
+	GranteePrefixedUniversal string `json:"GranteePrefixedUniversal"`
+	// IDField is the name of the claim in the JWT that contains the identity of
+	// the user. Example: "sub"
+	IDField string `json:"IdField"`
+	// IDMatch is the value of the claim in the JWT that contains the identity
+	// of the user. Example: "PDnW4ovpwjkhVWkGjxW4F5yZvmxEwGV7@clients"
+	IDMatch string `json:"IdMatch"`
+	// IssuerURI is the URI of the issuer of the JWT. Example:
+	// "https://dev-g55ca78eoi1f0w71.us.auth0.com/"
+	IssuerURI string `json:"IssuerUri"`
+	// Name is the name of the JWT mapping. Example: "Example JWT mapping"
+	Name string `json:"Name"`
+	// PurposeField is the name of the claim in the JWT that contains the
+	// purpose of the JWT. Example: "aud"
+	PurposeField string `json:"PurposeField"`
+	// PurposeMatch is the value of the claim in the JWT that contains the purpose
+	// of the JWT. Example: "tpp".
+	PurposeMatch string `json:"PurposeMatch"`
+}
+
+type User struct {
+	// The full name is the distinguished name of the user.
+	FullName string `json:"FullName"`
+
+	// The name is the user's login name. Example: "jbadd".
+	Name string `json:"Name"`
+
+	// The prefix is the domain name. Example: "AD+venqa".
+	Prefix string `json:"Prefix"`
+
+	// The prefixed name is the domain name followed by a colon and the user's
+	// login name. Example: "AD+venqa:jbadd".
+	PrefixedName string `json:"PrefixedName"`
+
+	// The prefixed universal is the domain name followed by a colon and the
+	// user's universal ID. Example: "AD+venqa:7f93d2908020204a959910ea5a5704ff".
+	PrefixedUniversal string `json:"PrefixedUniversal"`
+
+	// The type is the type of the identity. 1 for user, 2 for group.
+	Type int `json:"Type"`
+
+	// The universal is the user's universal ID. Example: "{7f93d2908020204a959910ea5a5704ff}".
+	Universal string `json:"Universal"`
+
+	// IsGroup is true if the identity is a group.
+	IsGroup bool `json:"IsGroup"`
+}
+
+// POST Identity/Browse
+func findUsers(tppURL, token, filter string) ([]User, error) {
+	body, err := json.Marshal(struct {
+		Filter       string `json:"Filter"`
+		Limit        int    `json:"Limit"`
+		IdentityType int    `json:"IdentityType"`
+	}{
+		Filter:       filter,
+		Limit:        900,
+		IdentityType: 3,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("while marshaling the request body: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", tppURL+"/vedsdk/Identity/Browse", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("while creating the request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("while making the request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Dump.
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("find user failed: %s, body: %v", resp.Status, string(body))
+	}
+
+	var res struct {
+		Identities []User `json:"Identities"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return nil, fmt.Errorf("while decoding the response: %w", err)
+	}
+
+	return res.Identities, nil
+}
+
+func listUsers(tppURL, token string) ([]User, error) {
+	return findUsers(tppURL, token, "")
+}
